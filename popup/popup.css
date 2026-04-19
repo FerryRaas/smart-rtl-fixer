@@ -1,0 +1,121 @@
+:root {
+  color-scheme: light dark;
+  --bg: #111827;
+  --panel: #1f2937;
+  --text: #f9fafb;
+  --muted: #cbd5e1;
+  --accent: #2563eb;
+  --border: rgba(148, 163, 184, 0.3);
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc;
+    --panel: #ffffff;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #2563eb;
+    --border: rgba(148, 163, 184, 0.4);
+  }
+}
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.wrap {
+  width: 320px;
+  padding: 16px;
+}
+h1 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+.sub {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.host-card, .notes, .toggle-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.host {
+  font-size: 14px;
+  word-break: break-all;
+}
+.toggle-card {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.toggle-card strong,
+.toggle-card small {
+  display: block;
+}
+.toggle-card small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+.toggle-card input {
+  width: 18px;
+  height: 18px;
+}
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0;
+}
+.mode-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mode-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mode-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.off-btn.active {
+  background: #64748b;
+  border-color: #64748b;
+}
+.notes h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.notes ul {
+  margin: 0 0 8px 18px;
+  padding: 0;
+  font-size: 12px;
+}
+.notes li {
+  margin-bottom: 6px;
+}
+.small {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
