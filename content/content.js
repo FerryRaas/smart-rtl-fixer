@@ -8,6 +8,8 @@
   const DEFAULT_CONFIG = { enabled: false, mode: "smart" };
   const VALID_MODES = new Set(["smart", "deep"]);
 
+  const CODE_TAGS = ["pre", "code", "kbd", "samp", "textarea", "input", "select", "option"];
+
   function getHostname() {
     try {
       return location.hostname || location.origin || "unknown";
@@ -29,71 +31,73 @@
   }
 
   function getCssForMode(mode) {
-    if (mode === "deep") {
-      return `
-        html[${ATTR_MODE}="deep"] body :not(pre):not(code):not(kbd):not(samp):not(textarea):not(input):not(select):not(option) {
-          unicode-bidi: plaintext !important;
-        }
+    const p = `html[${ATTR_MODE}="${mode}"]`;
+    const codeSel = CODE_TAGS.map(t => `${p} ${t}`).join(",\n        ");
+    const codeNot = CODE_TAGS.map(t => `:not(${t})`).join("");
 
-        html[${ATTR_MODE}="deep"] pre,
-        html[${ATTR_MODE}="deep"] code,
-        html[${ATTR_MODE}="deep"] kbd,
-        html[${ATTR_MODE}="deep"] samp,
-        html[${ATTR_MODE}="deep"] textarea,
-        html[${ATTR_MODE}="deep"] input,
-        html[${ATTR_MODE}="deep"] select,
-        html[${ATTR_MODE}="deep"] option {
-          direction: ltr !important;
-          text-align: left !important;
-          unicode-bidi: isolate !important;
-        }
-      `;
-    }
-
-    return `
-      html[${ATTR_MODE}="smart"] p,
-      html[${ATTR_MODE}="smart"] div,
-      html[${ATTR_MODE}="smart"] span,
-      html[${ATTR_MODE}="smart"] li,
-      html[${ATTR_MODE}="smart"] td,
-      html[${ATTR_MODE}="smart"] th,
-      html[${ATTR_MODE}="smart"] blockquote,
-      html[${ATTR_MODE}="smart"] article,
-      html[${ATTR_MODE}="smart"] section,
-      html[${ATTR_MODE}="smart"] main,
-      html[${ATTR_MODE}="smart"] aside,
-      html[${ATTR_MODE}="smart"] header,
-      html[${ATTR_MODE}="smart"] footer,
-      html[${ATTR_MODE}="smart"] nav,
-      html[${ATTR_MODE}="smart"] h1,
-      html[${ATTR_MODE}="smart"] h2,
-      html[${ATTR_MODE}="smart"] h3,
-      html[${ATTR_MODE}="smart"] h4,
-      html[${ATTR_MODE}="smart"] h5,
-      html[${ATTR_MODE}="smart"] h6,
-      html[${ATTR_MODE}="smart"] label,
-      html[${ATTR_MODE}="smart"] button,
-      html[${ATTR_MODE}="smart"] [role="paragraph"],
-      html[${ATTR_MODE}="smart"] [data-message-author-role],
-      html[${ATTR_MODE}="smart"] [data-testid*="message"],
-      html[${ATTR_MODE}="smart"] .markdown,
-      html[${ATTR_MODE}="smart"] .prose {
-        direction: auto !important;
-        unicode-bidi: plaintext !important;
-      }
-
-      html[${ATTR_MODE}="smart"] pre,
-      html[${ATTR_MODE}="smart"] code,
-      html[${ATTR_MODE}="smart"] kbd,
-      html[${ATTR_MODE}="smart"] samp,
-      html[${ATTR_MODE}="smart"] textarea,
-      html[${ATTR_MODE}="smart"] input,
-      html[${ATTR_MODE}="smart"] select,
-      html[${ATTR_MODE}="smart"] option {
+    const codeBlock = `
+      ${codeSel} {
         direction: ltr !important;
         text-align: left !important;
         unicode-bidi: isolate !important;
+      }`;
+
+    if (mode === "deep") {
+      return `
+        ${p} body *${codeNot} {
+          unicode-bidi: plaintext !important;
+          text-align: start !important;
+        }
+        ${codeBlock}
+      `;
+    }
+
+    // smart mode
+    const blockSel = [
+      "p", "div", "li", "td", "th",
+      "blockquote", "article", "section", "main", "aside",
+      "header", "footer", "nav",
+      "h1", "h2", "h3", "h4", "h5", "h6",
+      "dd", "dt", "figcaption", "caption",
+      "details", "summary", "address"
+    ].map(t => `${p} ${t}`).concat([
+      `${p} [role="paragraph"]`,
+      `${p} [role="listitem"]`,
+      `${p} [role="heading"]`,
+      `${p} [data-message-author-role]`,
+      `${p} [data-testid*="message"]`,
+      `${p} .markdown`,
+      `${p} .prose`
+    ]).join(",\n        ");
+
+    const inlineSel = [
+      "span", "a", "em", "strong", "b", "i", "cite", "q", "label", "button"
+    ].map(t => `${p} ${t}`).join(",\n        ");
+
+    // Sites that hardcode dir="ltr" on elements
+    const dirOverrideSel = [
+      `${p} [dir="ltr"]${codeNot}`,
+      `${p} [dir="LTR"]${codeNot}`
+    ].join(",\n        ");
+
+    return `
+      ${blockSel} {
+        direction: auto !important;
+        unicode-bidi: plaintext !important;
+        text-align: start !important;
       }
+
+      ${inlineSel} {
+        unicode-bidi: isolate !important;
+      }
+
+      ${dirOverrideSel} {
+        direction: auto !important;
+        unicode-bidi: plaintext !important;
+        text-align: start !important;
+      }
+
+      ${codeBlock}
     `;
   }
 
@@ -114,6 +118,7 @@
     if (document.body) {
       document.body.removeAttribute(ATTR_MODE);
     }
+    stopObserver();
   }
 
   function applyConfig(config) {
@@ -128,6 +133,31 @@
     document.documentElement.setAttribute(ATTR_MODE, finalConfig.mode);
     if (document.body) {
       document.body.setAttribute(ATTR_MODE, finalConfig.mode);
+    }
+    startObserver(finalConfig.mode);
+  }
+
+  // MutationObserver: re-stamps the mode attribute if the site removes it dynamically
+  let _observer = null;
+
+  function startObserver(mode) {
+    stopObserver();
+    _observer = new MutationObserver(() => {
+      const current = document.documentElement.getAttribute(ATTR_MODE);
+      if (current !== mode) {
+        document.documentElement.setAttribute(ATTR_MODE, mode);
+      }
+    });
+    _observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [ATTR_MODE]
+    });
+  }
+
+  function stopObserver() {
+    if (_observer) {
+      _observer.disconnect();
+      _observer = null;
     }
   }
 
