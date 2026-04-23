@@ -8,7 +8,7 @@
   const DEFAULT_CONFIG = { enabled: false, mode: "smart" };
   const VALID_MODES = new Set(["smart", "deep"]);
 
-  const CODE_TAGS = ["pre", "code", "kbd", "samp", "textarea", "input", "select", "option"];
+  const CODE_TAGS = ["pre", "code", "kbd", "samp", "input", "select", "option"];
 
   function getHostname() {
     try {
@@ -59,7 +59,7 @@
       "header", "footer", "nav",
       "h1", "h2", "h3", "h4", "h5", "h6",
       "dd", "dt", "figcaption", "caption",
-      "details", "summary", "address"
+      "details", "summary", "address", "textarea"
     ].map(t => `${p} ${t}`).concat([
       `${p} [role="paragraph"]`,
       `${p} [role="listitem"]`,
