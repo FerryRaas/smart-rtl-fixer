@@ -5,10 +5,19 @@
   const STORAGE_KEY = "siteConfigV2";
   const STYLE_ID = "smart-rtl-fixer-style";
   const ATTR_MODE = "data-smart-rtl-fixer-mode";
-  const DEFAULT_CONFIG = { enabled: false, mode: "smart" };
-  const VALID_MODES = new Set(["smart", "deep"]);
+  const ATTR_FIXED = "data-smart-rtl-fixed";
+  const DEFAULT_CONFIG = { enabled: false };
 
-  const CODE_TAGS = ["pre", "code", "kbd", "samp", "input", "select", "option"];
+  const CODE_TAGS = new Set(["pre", "code", "kbd", "samp", "input", "select", "option"]);
+
+  const JS_FIX_SELECTOR = [
+    "p", "li", "td", "th", "blockquote",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "dd", "dt", "figcaption", "summary", "address", "textarea"
+  ].join(",");
+
+  const ARABIC_RE = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/g;
+  const LATIN_RE  = /[a-zA-Z]/g;
 
   function getHostname() {
     try {
@@ -18,88 +27,136 @@
     }
   }
 
-  function normalizeMode(mode) {
-    return VALID_MODES.has(mode) ? mode : DEFAULT_CONFIG.mode;
-  }
-
   function normalizeConfig(config) {
     const safe = config && typeof config === "object" ? config : {};
-    return {
-      enabled: Boolean(safe.enabled),
-      mode: normalizeMode(safe.mode)
-    };
+    return { enabled: Boolean(safe.enabled) };
   }
 
-  function getCssForMode(mode) {
-    const p = `html[${ATTR_MODE}="${mode}"]`;
-    const codeSel = CODE_TAGS.map(t => `${p} ${t}`).join(",\n        ");
-    const codeNot = CODE_TAGS.map(t => `:not(${t})`).join("");
+  // --- CSS ---
+  // All non-code elements get unicode-bidi: plaintext so each element independently
+  // detects its direction from its first strong character (P2/P3 Unicode rules),
+  // ignoring inherited direction. This handles both Arabic-dominant paragraphs and
+  // mixed inline elements like <strong>Claude Code أقوى بكثير</strong>.
 
-    const codeBlock = `
+  function getFixedCss() {
+    const p = `html[${ATTR_MODE}="on"]`;
+    const codeNot = [...CODE_TAGS].map(t => `:not(${t})`).join("");
+    const codeSel = [...CODE_TAGS].map(t => `${p} ${t}`).join(",\n        ");
+
+    return `
+      ${p} body *${codeNot} {
+        unicode-bidi: plaintext !important;
+        text-align: start !important;
+      }
+
       ${codeSel} {
         direction: ltr !important;
         text-align: left !important;
         unicode-bidi: isolate !important;
-      }`;
-
-    if (mode === "deep") {
-      return `
-        ${p} body *${codeNot} {
-          unicode-bidi: plaintext !important;
-          text-align: start !important;
-        }
-        ${codeBlock}
-      `;
-    }
-
-    // smart mode
-    const blockSel = [
-      "p", "div", "li", "td", "th",
-      "blockquote", "article", "section", "main", "aside",
-      "header", "footer", "nav",
-      "h1", "h2", "h3", "h4", "h5", "h6",
-      "dd", "dt", "figcaption", "caption",
-      "details", "summary", "address", "textarea"
-    ].map(t => `${p} ${t}`).concat([
-      `${p} [role="paragraph"]`,
-      `${p} [role="listitem"]`,
-      `${p} [role="heading"]`,
-      `${p} [data-message-author-role]`,
-      `${p} [data-testid*="message"]`,
-      `${p} .markdown`,
-      `${p} .prose`
-    ]).join(",\n        ");
-
-    const inlineSel = [
-      "span", "a", "em", "strong", "b", "i", "cite", "q", "label", "button"
-    ].map(t => `${p} ${t}`).join(",\n        ");
-
-    // Sites that hardcode dir="ltr" on elements
-    const dirOverrideSel = [
-      `${p} [dir="ltr"]${codeNot}`,
-      `${p} [dir="LTR"]${codeNot}`
-    ].join(",\n        ");
-
-    return `
-      ${blockSel} {
-        direction: auto !important;
-        unicode-bidi: plaintext !important;
-        text-align: start !important;
       }
-
-      ${inlineSel} {
-        unicode-bidi: isolate !important;
-      }
-
-      ${dirOverrideSel} {
-        direction: auto !important;
-        unicode-bidi: plaintext !important;
-        text-align: start !important;
-      }
-
-      ${codeBlock}
     `;
   }
+
+  // --- JS direction detection ---
+  // Fixes paragraphs that start with an English word but are mostly Arabic.
+  // unicode-bidi: plaintext uses first strong char (P2), so "Cowork مصمم..." → LTR.
+  // This counts Arabic vs Latin chars and forces RTL+embed when Arabic dominates,
+  // overriding the plaintext detection for those elements only.
+
+  function isDominantlyArabic(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    const arabic = (trimmed.match(ARABIC_RE) || []).length;
+    const latin  = (trimmed.match(LATIN_RE)  || []).length;
+    return arabic > 0 && arabic > latin;
+  }
+
+  function fixElementDirection(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return;
+    if (CODE_TAGS.has(el.tagName.toLowerCase())) return;
+
+    if (isDominantlyArabic(el.textContent || "")) {
+      el.style.setProperty("direction", "rtl", "important");
+      el.style.setProperty("unicode-bidi", "embed", "important");
+      el.style.setProperty("text-align", "start", "important");
+      el.setAttribute(ATTR_FIXED, "1");
+    } else if (el.hasAttribute(ATTR_FIXED)) {
+      el.style.removeProperty("direction");
+      el.style.removeProperty("unicode-bidi");
+      el.style.removeProperty("text-align");
+      el.removeAttribute(ATTR_FIXED);
+    }
+  }
+
+  function fixAllElements() {
+    document.querySelectorAll(JS_FIX_SELECTOR).forEach(fixElementDirection);
+  }
+
+  // Debounce for streaming text (e.g. Claude's token-by-token output)
+  let _pendingFixes = new Set();
+  let _fixTimer = null;
+
+  function scheduleFixElement(el) {
+    _pendingFixes.add(el);
+    if (_fixTimer) return;
+    _fixTimer = setTimeout(() => {
+      _pendingFixes.forEach(fixElementDirection);
+      _pendingFixes.clear();
+      _fixTimer = null;
+    }, 120);
+  }
+
+  // --- Observers ---
+
+  let _attrObserver = null;
+  let _contentObserver = null;
+
+  function startObservers() {
+    stopObservers();
+
+    // Guard against sites removing our mode attribute
+    _attrObserver = new MutationObserver(() => {
+      if (document.documentElement.getAttribute(ATTR_MODE) !== "on") {
+        document.documentElement.setAttribute(ATTR_MODE, "on");
+      }
+    });
+    _attrObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [ATTR_MODE]
+    });
+
+    // Watch for new or updated content and apply JS direction fix
+    _contentObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          if (node.matches(JS_FIX_SELECTOR)) scheduleFixElement(node);
+          node.querySelectorAll(JS_FIX_SELECTOR).forEach(scheduleFixElement);
+        }
+        if (mutation.type === "characterData") {
+          const parent = mutation.target.parentElement;
+          const ancestor = parent && parent.closest(JS_FIX_SELECTOR);
+          if (ancestor) scheduleFixElement(ancestor);
+        }
+      }
+    });
+    _contentObserver.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    fixAllElements();
+  }
+
+  function stopObservers() {
+    if (_attrObserver) { _attrObserver.disconnect(); _attrObserver = null; }
+    if (_contentObserver) { _contentObserver.disconnect(); _contentObserver = null; }
+    if (_fixTimer) { clearTimeout(_fixTimer); _fixTimer = null; }
+    _pendingFixes.clear();
+  }
+
+  // --- Style tag ---
 
   function ensureStyleTag() {
     let style = document.getElementById(STYLE_ID);
@@ -112,13 +169,16 @@
   }
 
   function clearMode() {
-    const style = ensureStyleTag();
-    style.textContent = "";
+    ensureStyleTag().textContent = "";
     document.documentElement.removeAttribute(ATTR_MODE);
-    if (document.body) {
-      document.body.removeAttribute(ATTR_MODE);
-    }
-    stopObserver();
+    if (document.body) document.body.removeAttribute(ATTR_MODE);
+    stopObservers();
+    document.querySelectorAll(`[${ATTR_FIXED}]`).forEach(el => {
+      el.style.removeProperty("direction");
+      el.style.removeProperty("unicode-bidi");
+      el.style.removeProperty("text-align");
+      el.removeAttribute(ATTR_FIXED);
+    });
   }
 
   function applyConfig(config) {
@@ -128,38 +188,13 @@
       return;
     }
 
-    const style = ensureStyleTag();
-    style.textContent = getCssForMode(finalConfig.mode);
-    document.documentElement.setAttribute(ATTR_MODE, finalConfig.mode);
-    if (document.body) {
-      document.body.setAttribute(ATTR_MODE, finalConfig.mode);
-    }
-    startObserver(finalConfig.mode);
+    ensureStyleTag().textContent = getFixedCss();
+    document.documentElement.setAttribute(ATTR_MODE, "on");
+    if (document.body) document.body.setAttribute(ATTR_MODE, "on");
+    startObservers();
   }
 
-  // MutationObserver: re-stamps the mode attribute if the site removes it dynamically
-  let _observer = null;
-
-  function startObserver(mode) {
-    stopObserver();
-    _observer = new MutationObserver(() => {
-      const current = document.documentElement.getAttribute(ATTR_MODE);
-      if (current !== mode) {
-        document.documentElement.setAttribute(ATTR_MODE, mode);
-      }
-    });
-    _observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: [ATTR_MODE]
-    });
-  }
-
-  function stopObserver() {
-    if (_observer) {
-      _observer.disconnect();
-      _observer = null;
-    }
-  }
+  // --- Storage ---
 
   function readStoredConfig(callback) {
     const hostname = getHostname();

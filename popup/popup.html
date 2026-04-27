@@ -18,25 +18,13 @@
     <label class="toggle-card">
       <span>
         <strong>Enable on this site</strong>
-        <small>Save activation for this domain</small>
+        <small>Fixes Arabic alignment and mixed text direction</small>
       </span>
       <input id="enabledToggle" type="checkbox">
     </label>
 
-    <div class="modes" role="group" aria-label="RTL fixing modes">
-      <button data-mode="smart" class="mode-btn">Smart</button>
-      <button data-mode="deep" class="mode-btn">Deep</button>
-      <button data-mode="off" class="mode-btn off-btn">Off now</button>
-    </div>
-
     <section class="notes">
-      <h2>Modes</h2>
-      <ul>
-        <li><strong>Smart</strong>: Applies bidi fixes to common text containers only.</li>
-        <li><strong>Deep</strong>: Applies a stronger bidi fix to most non-code elements.</li>
-        <li><strong>Off now</strong>: Disables the fixer for this site and saves it as disabled.</li>
-      </ul>
-      <p class="small">Code blocks, inputs, and textareas remain left to right.</p>
+      <p class="small">Code blocks remain left to right.</p>
     </section>
   </main>
   <script src="popup.js"></script>

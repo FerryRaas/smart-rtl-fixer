@@ -1,17 +1,9 @@
 const STORAGE_KEY = "siteConfigV2";
-const DEFAULT_CONFIG = { enabled: false, mode: "smart" };
-const VALID_MODES = new Set(["smart", "deep"]);
-
-function normalizeMode(mode) {
-  return VALID_MODES.has(mode) ? mode : DEFAULT_CONFIG.mode;
-}
+const DEFAULT_CONFIG = { enabled: false };
 
 function normalizeConfig(config) {
   const safe = config && typeof config === "object" ? config : {};
-  return {
-    enabled: Boolean(safe.enabled),
-    mode: normalizeMode(safe.mode)
-  };
+  return { enabled: Boolean(safe.enabled) };
 }
 
 async function getActiveTab() {
@@ -34,34 +26,21 @@ async function getStoredConfig(hostname) {
 }
 
 function markActive(config) {
-  const finalConfig = normalizeConfig(config);
-  const enabledToggle = document.getElementById("enabledToggle");
-  enabledToggle.checked = finalConfig.enabled;
-
-  document.querySelectorAll(".mode-btn").forEach((btn) => {
-    const isOff = btn.dataset.mode === "off";
-    const isActive = isOff ? !finalConfig.enabled : finalConfig.enabled && btn.dataset.mode === finalConfig.mode;
-    btn.classList.toggle("active", isActive);
-    if (!isOff) {
-      btn.disabled = !finalConfig.enabled;
-    }
-  });
+  document.getElementById("enabledToggle").checked = config.enabled;
 }
 
 async function pushConfig(config) {
   const tab = await getActiveTab();
   if (!tab || !tab.id) return;
-
   await browser.tabs.sendMessage(tab.id, {
     type: "SMART_RTL_SET_CONFIG",
-    config: normalizeConfig(config)
+    config
   });
 }
 
 async function saveAndApply(config) {
-  const finalConfig = normalizeConfig(config);
-  await pushConfig(finalConfig);
-  markActive(finalConfig);
+  await pushConfig(config);
+  markActive(config);
 }
 
 async function init() {
@@ -69,29 +48,19 @@ async function init() {
   const host = getHostnameFromUrl(tab.url || "");
   document.getElementById("host").textContent = host;
 
-  let currentConfig = await getStoredConfig(host);
+  const result = await browser.storage.local.get(STORAGE_KEY);
+  const siteConfig = result[STORAGE_KEY] || {};
+  let currentConfig = normalizeConfig(siteConfig[host] || DEFAULT_CONFIG);
   markActive(currentConfig);
 
   document.getElementById("enabledToggle").addEventListener("change", async (event) => {
-    currentConfig = {
-      ...currentConfig,
-      enabled: event.target.checked
-    };
-    await saveAndApply(currentConfig);
-  });
-
-  document.querySelectorAll(".mode-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (btn.dataset.mode === "off") {
-        currentConfig = { ...currentConfig, enabled: false };
-      } else {
-        currentConfig = {
-          enabled: true,
-          mode: normalizeMode(btn.dataset.mode)
-        };
-      }
-      await saveAndApply(currentConfig);
-    });
+    currentConfig = { enabled: event.target.checked };
+    const normalized = normalizeConfig(currentConfig);
+    await pushConfig(normalized);
+    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY] || {};
+    stored[host] = normalized;
+    await browser.storage.local.set({ [STORAGE_KEY]: stored });
+    markActive(normalized);
   });
 }
 
